@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Backtest de Portafolio</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  body {
+    margin: 0;
+    background: #0b0f0e;
+    color: #e8ede9;
+    font-family: -apple-system, sans-serif;
+    padding: 32px 16px 80px;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 28px; margin: 0 0 6px; }
+  .sub { color: #7d9188; font-size: 14px; margin: 0 0 24px; }
+  .panel {
+    background: #121817;
+    border: 1px solid #223028;
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+  }
+  label {
+    display: block;
+    font-size: 12px;
+    color: #7d9188;
+    margin-bottom: 6px;
+  }
+  input {
+    width: 100%;
+    background: #0e1513;
+    border: 1px solid #223028;
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: #e8ede9;
+    font-size: 14px;
+    box-sizing: border-box;
+  }
+  .tickers-hint { font-size: 12px; color: #7d9188; margin-top: 6px; }
+  button {
+    margin-top: 18px;
+    background: #5ee6b0;
+    color: #06110d;
+    border: none;
+    border-radius: 6px;
+    padding: 12px 20px;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:disabled { background: #2b7a5a; cursor: wait; }
+  .error {
+    color: #ff6b5e;
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 1px;
+    background: #223028;
+    border: 1px solid #223028;
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+  .metric { background: #121817; padding: 16px; }
+  .metric-label { font-size: 11px; text-transform: uppercase; color: #7d9188; margin-bottom: 6px; }
+  .metric-value { font-size: 20px; font-weight: 600; }
+  .metric-value.pos { color: #5ee6b0; }
+  .metric-value.neg { color: #ff6b5e; }
+  canvas { max-height: 360px; }
+  #results { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>¿Cómo habría rendido tu portafolio?</h1>
+  <p class="sub">Simulación histórica simple: compra al inicio del período, sin rebalanceo, sin comisiones.</p>
+
+  <div class="panel">
+    <form id="backtest-form">
+      <div class="grid">
+        <div>
+          <label for="tickers">Símbolos (separados por coma)</label>
+          <input type="text" id="tickers" placeholder="AAPL, MSFT, VOO" required />
+        </div>
+        <div>
+          <label for="capital">Capital (USD)</label>
+          <input type="number" id="capital" value="10000" min="1" required />
+        </div>
+        <div>
+          <label for="start">Desde</label>
+          <input type="date" id="start" required />
+        </div>
+        <div>
+          <label for="end">Hasta</label>
+          <input type="date" id="end" required />
+        </div>
+      </div>
+      <p class="tickers-hint">Al menos 2 símbolos. Usá el ticker tal como cotiza (ej: AAPL).</p>
+      <button type="submit" id="submit-btn">Analizar portafolio</button>
+      <p class="error" id="error-msg"></p>
+    </form>
+  </div>
+
+  <div id="results">
+    <div class="metrics" id="metrics"></div>
+    <div class="panel">
+      <canvas id="chart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+const API_URL = "http://localhost:8000/api/backtest";
+const form = document.getElementById("backtest-form");
+const errorMsg = document.getElementById("error-msg");
+const submitBtn = document.getElementById("submit-btn");
+const resultsEl = document.getElementById("results");
+const metricsEl = document.getElementById("metrics");
+let chartInstance = null;
+
+const today = new Date();
+const lastYear = new Date();
+lastYear.setFullYear(today.getFullYear() - 1);
+document.getElementById("end").value = today.toISOString().slice(0, 10);
+document.getElementById("start").value = lastYear.toISOString().slice(0, 10);
+
+const METRIC_LABELS = {
+  capital_inicial: "Capital inicial",
+  valor_final: "Valor final",
+  retorno_total_pct: "Retorno total",
+  cagr_pct: "CAGR",
+  volatilidad_anual_pct: "Volatilidad anual",
+  max_drawdown_pct: "Drawdown máximo",
+  sharpe_aprox: "Sharpe (aprox.)",
+};
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  errorMsg.style.display = "none";
+
+  const tickers = document.getElementById("tickers").value
+    .split(",").map(t => t.trim()).filter(Boolean);
+  const capital = parseFloat(document.getElementById("capital").value);
+  const start = document.getElementById("start").value;
+  const end = document.getElementById("end").value;
+
+  if (tickers.length < 2) {
+    showError("Ingresá al menos 2 símbolos separados por coma.");
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "Calculando...";
+
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tickers, capital, start, end }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Error al calcular el backtest.");
+    renderResults(data);
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = "Analizar portafolio";
+  }
+});
+
+function showError(msg) {
+  errorMsg.textContent = msg;
+  errorMsg.style.display = "block";
+}
+
+function renderResults(data) {
+  resultsEl.style.display = "block";
+  metricsEl.innerHTML = "";
+  for (const [key, label] of Object.entries(METRIC_LABELS)) {
+    const value = data.metrics[key];
+    const isPct = key.includes("pct");
+    const cls = isPct ? (value >= 0 ? "pos" : "neg") : "";
+    const div = document.createElement("div");
+    div.className = "metric";
+    div.innerHTML = `<div class="metric-label">${label}</div><div class="metric-value ${cls}">${isPct ? value + "%" : "$" + value.toLocaleString()}</div>`;
+    metricsEl.appendChild(div);
+  }
+
+  const ctx = document.getElementById("chart").getContext("2d");
+  if (chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: data.dates,
+      datasets: [{
+        label: "Valor del portafolio (USD)",
+        data: data.portfolio_value,
+        borderColor: "#5ee6b0",
+        backgroundColor: "rgba(94,230,176,0.08)",
+        fill: true,
+        pointRadius: 0,
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: "#e8ede9" } } },
+      scales: {
+        x: { ticks: { color: "#7d9188", maxTicksLimit: 8 }, grid: { color: "#223028" } },
+        y: { ticks: { color: "#7d9188" }, grid: { color: "#223028" } },
+      },
+    },
+  });
+}
+</script>
+</body>
+</html>
