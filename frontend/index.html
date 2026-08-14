@@ -5,87 +5,190 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Backtest de Portafolio</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  body {
+  :root {
+    --bg: #07050f;
+    --panel: rgba(255,255,255,0.04);
+    --panel-border: rgba(255,255,255,0.09);
+    --text: #f2f0fa;
+    --muted: #a79fc4;
+    --accent: #b48cff;
+    --accent2: #7c5cff;
+    --pos: #7ef0c2;
+    --neg: #ff8a80;
+  }
+  * { box-sizing: border-box; }
+  html, body {
     margin: 0;
-    background: #0b0f0e;
-    color: #e8ede9;
-    font-family: -apple-system, sans-serif;
-    padding: 32px 16px 80px;
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, sans-serif;
   }
-  .wrap { max-width: 920px; margin: 0 auto; }
-  h1 { font-size: 28px; margin: 0 0 6px; }
-  .sub { color: #7d9188; font-size: 14px; margin: 0 0 24px; }
+  body {
+    position: relative;
+    padding: 48px 20px 100px;
+    overflow-x: hidden;
+  }
+  /* Fondo aurora */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(60% 50% at 20% 10%, rgba(124,92,255,0.35), transparent 60%),
+      radial-gradient(50% 45% at 80% 15%, rgba(180,140,255,0.25), transparent 60%),
+      radial-gradient(70% 60% at 50% 100%, rgba(80,50,180,0.30), transparent 60%),
+      var(--bg);
+    filter: blur(10px);
+  }
+  .wrap { max-width: 960px; margin: 0 auto; position: relative; }
+
+  header { margin-bottom: 36px; }
+  .eyebrow {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-family: 'Sora', sans-serif;
+    font-size: clamp(30px, 5vw, 44px);
+    font-weight: 800;
+    line-height: 1.15;
+    margin: 0 0 12px;
+    letter-spacing: -0.01em;
+  }
+  h1 .grad {
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .sub {
+    color: var(--muted);
+    font-size: 16px;
+    max-width: 560px;
+    margin: 0;
+    line-height: 1.5;
+  }
+
   .panel {
-    background: #121817;
-    border: 1px solid #223028;
-    border-radius: 10px;
-    padding: 20px;
-    margin-bottom: 20px;
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 18px;
+    padding: 28px;
+    margin-bottom: 24px;
+    backdrop-filter: blur(18px);
   }
+
   .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 16px;
   }
   label {
     display: block;
     font-size: 12px;
-    color: #7d9188;
-    margin-bottom: 6px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
   }
   input {
     width: 100%;
-    background: #0e1513;
-    border: 1px solid #223028;
-    border-radius: 6px;
-    padding: 10px 12px;
-    color: #e8ede9;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
     font-size: 14px;
     box-sizing: border-box;
+    transition: border-color 0.15s ease;
   }
-  .tickers-hint { font-size: 12px; color: #7d9188; margin-top: 6px; }
+  input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .tickers-hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
   button {
-    margin-top: 18px;
-    background: #5ee6b0;
-    color: #06110d;
+    margin-top: 22px;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    color: #0a0614;
     border: none;
-    border-radius: 6px;
-    padding: 12px 20px;
-    font-weight: 600;
+    border-radius: 10px;
+    padding: 14px 26px;
+    font-weight: 700;
     font-size: 14px;
+    font-family: 'Inter', sans-serif;
     cursor: pointer;
+    transition: filter 0.15s ease, transform 0.1s ease;
   }
-  button:disabled { background: #2b7a5a; cursor: wait; }
+  button:hover { filter: brightness(1.1); }
+  button:active { transform: scale(0.98); }
+  button:disabled { opacity: 0.5; cursor: wait; }
+
   .error {
-    color: #ff6b5e;
+    color: var(--neg);
     font-size: 13px;
-    margin-top: 12px;
+    margin-top: 14px;
     display: none;
   }
+
   .metrics {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 1px;
-    background: #223028;
-    border: 1px solid #223028;
-    border-radius: 8px;
+    background: var(--panel-border);
+    border: 1px solid var(--panel-border);
+    border-radius: 16px;
     overflow: hidden;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
   }
-  .metric { background: #121817; padding: 16px; }
-  .metric-label { font-size: 11px; text-transform: uppercase; color: #7d9188; margin-bottom: 6px; }
-  .metric-value { font-size: 20px; font-weight: 600; }
-  .metric-value.pos { color: #5ee6b0; }
-  .metric-value.neg { color: #ff6b5e; }
-  canvas { max-height: 360px; }
+  .metric {
+    background: rgba(15,10,28,0.7);
+    padding: 20px;
+  }
+  .metric-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .metric-value {
+    font-family: 'Sora', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+  }
+  .metric-value.pos { color: var(--pos); }
+  .metric-value.neg { color: var(--neg); }
+
+  canvas { max-height: 380px; }
+
   #results { display: none; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>¿Cómo habría rendido tu portafolio?</h1>
-  <p class="sub">Simulación histórica simple: compra al inicio del período, sin rebalanceo, sin comisiones.</p>
+
+  <header>
+    <p class="eyebrow">Backtest · Buy &amp; Hold</p>
+    <h1>¿Cómo habría rendido<br><span class="grad">tu portafolio?</span></h1>
+    <p class="sub">Simulación histórica simple: compra al inicio del período, sin rebalanceo, sin comisiones.</p>
+  </header>
 
   <div class="panel">
     <form id="backtest-form">
@@ -119,10 +222,12 @@
       <canvas id="chart"></canvas>
     </div>
   </div>
+
 </div>
 
 <script>
 const API_URL = "http://localhost:8000/api/backtest";
+
 const form = document.getElementById("backtest-form");
 const errorMsg = document.getElementById("error-msg");
 const submitBtn = document.getElementById("submit-btn");
@@ -188,6 +293,7 @@ function showError(msg) {
 
 function renderResults(data) {
   resultsEl.style.display = "block";
+
   metricsEl.innerHTML = "";
   for (const [key, label] of Object.entries(METRIC_LABELS)) {
     const value = data.metrics[key];
@@ -195,12 +301,20 @@ function renderResults(data) {
     const cls = isPct ? (value >= 0 ? "pos" : "neg") : "";
     const div = document.createElement("div");
     div.className = "metric";
-    div.innerHTML = `<div class="metric-label">${label}</div><div class="metric-value ${cls}">${isPct ? value + "%" : "$" + value.toLocaleString()}</div>`;
+    div.innerHTML = `
+      <div class="metric-label">${label}</div>
+      <div class="metric-value ${cls}">${isPct ? value + "%" : "$" + value.toLocaleString()}</div>
+    `;
     metricsEl.appendChild(div);
   }
 
   const ctx = document.getElementById("chart").getContext("2d");
   if (chartInstance) chartInstance.destroy();
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, 380);
+  gradient.addColorStop(0, "rgba(180,140,255,0.35)");
+  gradient.addColorStop(1, "rgba(180,140,255,0.0)");
+
   chartInstance = new Chart(ctx, {
     type: "line",
     data: {
@@ -208,19 +322,20 @@ function renderResults(data) {
       datasets: [{
         label: "Valor del portafolio (USD)",
         data: data.portfolio_value,
-        borderColor: "#5ee6b0",
-        backgroundColor: "rgba(94,230,176,0.08)",
+        borderColor: "#b48cff",
+        backgroundColor: gradient,
         fill: true,
         pointRadius: 0,
-        borderWidth: 2,
+        borderWidth: 2.5,
+        tension: 0.15,
       }],
     },
     options: {
       responsive: true,
-      plugins: { legend: { labels: { color: "#e8ede9" } } },
+      plugins: { legend: { labels: { color: "#f2f0fa", font: { family: "Inter" } } } },
       scales: {
-        x: { ticks: { color: "#7d9188", maxTicksLimit: 8 }, grid: { color: "#223028" } },
-        y: { ticks: { color: "#7d9188" }, grid: { color: "#223028" } },
+        x: { ticks: { color: "#a79fc4", maxTicksLimit: 8, font: { family: "Inter" } }, grid: { color: "rgba(255,255,255,0.06)" } },
+        y: { ticks: { color: "#a79fc4", font: { family: "Inter" } }, grid: { color: "rgba(255,255,255,0.06)" } },
       },
     },
   });
