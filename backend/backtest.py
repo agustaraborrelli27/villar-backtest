@@ -20,7 +20,7 @@ class BacktestResult:
     portfolio_value: list
     per_asset_value: dict
     metrics: dict
-        benchmark_value: list = None
+    benchmark_value: list = None
 
 
 def _download_prices(tickers, start, end):
