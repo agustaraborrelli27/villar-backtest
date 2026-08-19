@@ -49,4 +49,5 @@ def backtest(req: BacktestRequest):
         "portfolio_value": result.portfolio_value,
         "per_asset_value": result.per_asset_value,
         "metrics": result.metrics,
+                "benchmark_value": result.benchmark_value,
     }
