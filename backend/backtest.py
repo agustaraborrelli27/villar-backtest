@@ -20,6 +20,7 @@ class BacktestResult:
     portfolio_value: list
     per_asset_value: dict
     metrics: dict
+        benchmark_value: list = None
 
 
 def _download_prices(tickers, start, end):
@@ -43,6 +44,29 @@ def _download_prices(tickers, start, end):
 
     close = close.dropna(how="all")
     return close
+
+
+def _compute_benchmark(dates_index, start, end, capital, ticker="SPY"):
+    """Calcula cómo hubiera rendido invertir el mismo capital en el benchmark (SPY)."""
+    try:
+        data = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
+    except Exception:
+        return None
+
+    if data.empty:
+        return None
+
+    close = data["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+
+    close = close.reindex(dates_index).ffill().bfill()
+    if close.isna().all():
+        return None
+
+    shares = capital / close.iloc[0]
+    value = close * shares
+    return [round(v, 2) for v in value.tolist()]
 
 
 def run_backtest(tickers, capital, start, end, weights: Optional[dict] = None):
@@ -76,6 +100,7 @@ def run_backtest(tickers, capital, start, end, weights: Optional[dict] = None):
     portfolio_value = per_asset_df.sum(axis=1)
 
     metrics = _compute_metrics(portfolio_value, capital)
+    benchmark_value = _compute_benchmark(portfolio_value.index, start, end, capital)
 
     return BacktestResult(
         dates=[d.strftime("%Y-%m-%d") for d in portfolio_value.index],
@@ -84,6 +109,7 @@ def run_backtest(tickers, capital, start, end, weights: Optional[dict] = None):
             t: [round(v, 2) for v in per_asset_df[t].tolist()] for t in tickers
         },
         metrics=metrics,
+                benchmark_value=benchmark_value,
     )
 
 
