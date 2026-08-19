@@ -338,8 +338,17 @@ function renderResults(data) {
         fill: true,
         pointRadius: 0,
         borderWidth: 2.5,
+                tension: 0.15,
+      }, ...(data.benchmark_value ? [{
+        label: "SPY (S&P 500)",
+        data: data.benchmark_value,
+        borderColor: "#7ef0c2",
+        borderDash: [6, 4],
+        fill: false,
+        pointRadius: 0,
+        borderWidth: 2,
         tension: 0.15,
-      }],
+      }] : [])],
     },
     options: {
       responsive: true,
