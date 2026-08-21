@@ -1,14 +1,14 @@
 """
 Lógica de backtesting de portafolios.
 
-Estrategia implementada: "buy and hold" simple.
-- Se reparte el capital inicial entre los activos elegidos (por defecto, en partes iguales).
-- Se compra una sola vez, al precio de cierre del primer día del período.
+Estrategia: "buy and hold" con fecha de compra (y venta opcional) individual por activo.
+- Cada activo tiene su propio capital, fecha de compra y fecha de venta opcional.
+- Antes de la fecha de compra, ese capital se considera en efectivo (no invertido, no crece).
+- Si se indica fecha de venta, después de esa fecha el valor queda fijo (se vendió, no se reinvierte).
 - No se rebalancea, no se descuentan comisiones ni impuestos, no se reinvierten dividendos.
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 import pandas as pd
 import yfinance as yf
@@ -23,93 +23,103 @@ class BacktestResult:
     benchmark_value: list = None
 
 
-def _download_prices(tickers, start, end):
-    """Descarga precios de cierre ajustados para una lista de tickers."""
-    data = yf.download(
-        tickers,
-        start=start,
-        end=end,
-        auto_adjust=True,
-        progress=False,
-    )
-
+def _download_close(ticker, start, end):
+    """Descarga precios de cierre ajustados para un ticker. Devuelve None si no hay datos."""
+    data = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
     if data.empty:
-        raise ValueError("No se encontraron datos para los tickers/fechas indicados.")
-
-    if isinstance(data.columns, pd.MultiIndex):
-        close = data["Close"]
-    else:
-        close = data[["Close"]]
-        close.columns = tickers
-
-    close = close.dropna(how="all")
+        return None
+    close = data["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+    close = close.dropna()
+    if close.empty:
+        return None
     return close
 
 
 def _compute_benchmark(dates_index, start, end, capital, ticker="SPY"):
     """Calcula cómo hubiera rendido invertir el mismo capital en el benchmark (SPY)."""
     try:
-        data = yf.download(ticker, start=start, end=end, auto_adjust=True, progress=False)
+        close = _download_close(ticker, start, end)
     except Exception:
         return None
-
-    if data.empty:
+    if close is None:
         return None
-
-    close = data["Close"]
-    if isinstance(close, pd.DataFrame):
-        close = close.iloc[:, 0]
-
     close = close.reindex(dates_index).ffill().bfill()
     if close.isna().all():
         return None
-
     shares = capital / close.iloc[0]
     value = close * shares
     return [round(v, 2) for v in value.tolist()]
 
 
-def run_backtest(tickers, capital, start, end, weights: Optional[dict] = None):
-    if len(tickers) < 2:
-        raise ValueError("Seleccioná al menos 2 símbolos.")
+def run_backtest(assets, end):
+    """
+    assets: lista de dicts, cada uno con:
+        ticker: str
+        capital: float
+        buy_date: str (YYYY-MM-DD)
+        sell_date: str opcional (YYYY-MM-DD). Si no se indica, se usa 'end'.
+    end: fecha final del análisis (YYYY-MM-DD).
+    """
+    if not assets:
+        raise ValueError("Agregá al menos 1 activo.")
+    if len(assets) > 10:
+        raise ValueError("Máximo 10 activos.")
 
-    tickers = [t.strip().upper() for t in tickers]
+    total_capital = 0.0
+    buy_dates = []
 
-    if weights is None:
-        weights = {t: 1.0 / len(tickers) for t in tickers}
-    else:
-        total = sum(weights.values())
-        if abs(total - 1.0) > 1e-6:
-            weights = {k: v / total for k, v in weights.items()}
+    for a in assets:
+        if not a.get("ticker"):
+            raise ValueError("Todos los activos necesitan un ticker.")
+        if not a.get("buy_date"):
+            raise ValueError(f"Falta la fecha de compra de {a.get('ticker')}.")
+        if not a.get("capital") or a.get("capital") <= 0:
+            raise ValueError(f"El capital de {a.get('ticker')} tiene que ser mayor a 0.")
+        sell_date = a.get("sell_date") or end
+        if sell_date < a["buy_date"]:
+            raise ValueError(f"La fecha de venta de {a['ticker']} no puede ser anterior a la de compra.")
+        total_capital += float(a["capital"])
+        buy_dates.append(a["buy_date"])
 
-    prices = _download_prices(tickers, start, end)
-    prices = prices.dropna()
+    global_start = min(buy_dates)
+    combined_index = pd.bdate_range(global_start, end)
 
-    if prices.empty:
-        raise ValueError("No hay fechas con datos simultáneos para todos los activos elegidos.")
+    per_asset_value = {}
+    portfolio_value = pd.Series(0.0, index=combined_index)
 
-    first_prices = prices.iloc[0]
+    for i, a in enumerate(assets):
+        ticker = a["ticker"].strip().upper()
+        capital = float(a["capital"])
+        buy_date = a["buy_date"]
+        sell_date = a.get("sell_date") or end
 
-    shares = {}
-    for t in tickers:
-        capital_asset = capital * weights[t]
-        shares[t] = capital_asset / first_prices[t]
+        close = _download_close(ticker, buy_date, sell_date)
+        if close is None:
+            raise ValueError(f"No se encontraron datos para {ticker} entre {buy_date} y {sell_date}.")
 
-    per_asset_value = {t: (prices[t] * shares[t]) for t in tickers}
-    per_asset_df = pd.DataFrame(per_asset_value)
-    portfolio_value = per_asset_df.sum(axis=1)
+        buy_price = close.iloc[0]
+        shares = capital / buy_price
+        value_series = close * shares
 
-    metrics = _compute_metrics(portfolio_value, capital)
-    benchmark_value = _compute_benchmark(portfolio_value.index, start, end, capital)
+        aligned = value_series.reindex(combined_index)
+        aligned = aligned.ffill()
+        aligned = aligned.fillna(capital)
+
+        label = f"{ticker}_{i + 1}"
+        per_asset_value[label] = [round(v, 2) for v in aligned.tolist()]
+        portfolio_value = portfolio_value.add(aligned, fill_value=0)
+
+    metrics = _compute_metrics(portfolio_value, total_capital)
+    benchmark_value = _compute_benchmark(portfolio_value.index, global_start, end, total_capital)
 
     return BacktestResult(
         dates=[d.strftime("%Y-%m-%d") for d in portfolio_value.index],
         portfolio_value=[round(v, 2) for v in portfolio_value.tolist()],
-        per_asset_value={
-            t: [round(v, 2) for v in per_asset_df[t].tolist()] for t in tickers
-        },
+        per_asset_value=per_asset_value,
         metrics=metrics,
-                benchmark_value=benchmark_value,
+        benchmark_value=benchmark_value,
     )
 
 
