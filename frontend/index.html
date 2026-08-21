@@ -32,7 +32,6 @@
     padding: 48px 20px 100px;
     overflow-x: hidden;
   }
-  /* Fondo aurora */
   body::before {
     content: "";
     position: fixed;
@@ -138,12 +137,47 @@
   button:active { transform: scale(0.98); }
   button:disabled { opacity: 0.5; cursor: wait; }
 
+  .secondary-btn {
+    margin-top: 6px;
+    background: rgba(255,255,255,0.06);
+    color: var(--text);
+    border: 1px dashed var(--panel-border);
+  }
+  .secondary-btn:hover { filter: none; background: rgba(255,255,255,0.1); }
+
   .error {
     color: var(--neg);
     font-size: 13px;
     margin-top: 14px;
     display: none;
   }
+
+  .assets-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 14px;
+  }
+
+  .asset-row {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr 1fr 1fr auto;
+    gap: 10px;
+    align-items: end;
+    margin-bottom: 14px;
+  }
+  .asset-row label { margin-bottom: 6px; }
+  .remove-asset-btn {
+    margin-top: 0;
+    background: rgba(255,138,128,0.12);
+    color: var(--neg);
+    border: 1px solid rgba(255,138,128,0.3);
+    padding: 12px 14px;
+    font-size: 14px;
+  }
+  .remove-asset-btn:hover { filter: none; background: rgba(255,138,128,0.22); }
 
   .metrics {
     display: grid;
@@ -179,6 +213,11 @@
   canvas { max-height: 380px; }
 
   #results { display: none; }
+
+  @media (max-width: 720px) {
+    .asset-row { grid-template-columns: 1fr 1fr; }
+    .remove-asset-btn { grid-column: span 2; }
+  }
 </style>
 </head>
 <body>
@@ -191,31 +230,25 @@
 </div>
     <p class="eyebrow">Backtest · Buy &amp; Hold</p>
     <h1>¿Cómo habría rendido<br><span class="grad">tu portafolio?</span></h1>
-    <p class="sub">Simulación histórica simple: compra al inicio del período, sin rebalanceo, sin comisiones.</p>
+    <p class="sub">Simulación histórica: cada activo con su propia fecha de compra, capital y venta opcional. Sin rebalanceo, sin comisiones.</p>
   </header>
 
   <div class="panel">
     <form id="backtest-form">
-      <div class="grid">
+      <p class="assets-title">Activos (hasta 10)</p>
+      <div id="assets-container"></div>
+      <button type="button" id="add-asset-btn" class="secondary-btn">+ Agregar activo</button>
+
+      <p class="tickers-hint">Cada activo tiene su propio capital y fecha de compra. La fecha de venta es opcional: si no la ponés, se calcula el valor hasta la fecha "Hasta" de abajo.</p>
+      <p class="tickers-hint" style="margin-top:6px;">💡 Si compraste en <strong>pesos</strong> (CEDEAR o acción argentina), agregá <strong>.BA</strong> al final (ej: AAPL.BA, GGAL.BA). Si compraste en <strong>dólares</strong> (acción en EEUU), usá el ticker solo (ej: AAPL).</p>
+
+      <div class="grid" style="margin-top:22px; max-width:220px;">
         <div>
-          <label for="tickers">Símbolos (separados por coma)</label>
-          <input type="text" id="tickers" placeholder="AAPL, MSFT, VOO" required />
-        </div>
-        <div>
-          <label for="capital">Capital (USD)</label>
-          <input type="number" id="capital" value="10000" min="1" required />
-        </div>
-        <div>
-          <label for="start">Desde</label>
-          <input type="date" id="start" required />
-        </div>
-        <div>
-          <label for="end">Hasta</label>
+          <label for="end">Hasta (valuación)</label>
           <input type="date" id="end" required />
         </div>
       </div>
-      <p class="tickers-hint">Al menos 2 símbolos. Usá el ticker tal como cotiza (ej: AAPL).</p>
-      <p class="tickers-hint" style="margin-top:6px;">💡 Si compraste en <strong>pesos</strong> (CEDEAR o acción argentina), agregá <strong>.BA</strong> al final (ej: AAPL.BA, GGAL.BA). Si compraste en <strong>dólares</strong> (acción en EEUU), usá el ticker solo (ej: AAPL).</p>
+
       <button type="submit" id="submit-btn">Analizar portafolio</button>
       <p class="error" id="error-msg"></p>
     </form>
@@ -238,19 +271,63 @@
 
 <script>
 const API_URL = "https://villar-backtest.onrender.com/api/backtest";
+const MAX_ASSETS = 10;
 
 const form = document.getElementById("backtest-form");
 const errorMsg = document.getElementById("error-msg");
 const submitBtn = document.getElementById("submit-btn");
 const resultsEl = document.getElementById("results");
 const metricsEl = document.getElementById("metrics");
+const assetsContainer = document.getElementById("assets-container");
+const addAssetBtn = document.getElementById("add-asset-btn");
 let chartInstance = null;
+let assetCount = 0;
 
 const today = new Date();
 const lastYear = new Date();
 lastYear.setFullYear(today.getFullYear() - 1);
 document.getElementById("end").value = today.toISOString().slice(0, 10);
-document.getElementById("start").value = lastYear.toISOString().slice(0, 10);
+
+function addAssetRow() {
+  if (assetCount >= MAX_ASSETS) return;
+  assetCount++;
+
+  const row = document.createElement("div");
+  row.className = "asset-row";
+  row.innerHTML = `
+    <div>
+      <label>Ticker</label>
+      <input type="text" class="asset-ticker" placeholder="AAPL" required />
+    </div>
+    <div>
+      <label>Capital (USD)</label>
+      <input type="number" class="asset-capital" min="1" value="1000" required />
+    </div>
+    <div>
+      <label>Fecha de compra</label>
+      <input type="date" class="asset-buy" value="${lastYear.toISOString().slice(0, 10)}" required />
+    </div>
+    <div>
+      <label>Fecha de venta (opcional)</label>
+      <input type="date" class="asset-sell" />
+    </div>
+    <button type="button" class="remove-asset-btn" title="Quitar activo">✕</button>
+  `;
+
+  row.querySelector(".remove-asset-btn").addEventListener("click", () => {
+    row.remove();
+    assetCount--;
+    addAssetBtn.disabled = false;
+  });
+
+  assetsContainer.appendChild(row);
+  if (assetCount >= MAX_ASSETS) addAssetBtn.disabled = true;
+}
+
+addAssetBtn.addEventListener("click", addAssetRow);
+
+addAssetRow();
+addAssetRow();
 
 const METRIC_LABELS = {
   capital_inicial: "Capital inicial",
@@ -266,14 +343,21 @@ form.addEventListener("submit", async (e) => {
   e.preventDefault();
   errorMsg.style.display = "none";
 
-  const tickers = document.getElementById("tickers").value
-    .split(",").map(t => t.trim()).filter(Boolean);
-  const capital = parseFloat(document.getElementById("capital").value);
-  const start = document.getElementById("start").value;
+  const rows = assetsContainer.querySelectorAll(".asset-row");
+  const assets = [];
+  for (const row of rows) {
+    const ticker = row.querySelector(".asset-ticker").value.trim();
+    const capital = parseFloat(row.querySelector(".asset-capital").value);
+    const buy_date = row.querySelector(".asset-buy").value;
+    const sell_date = row.querySelector(".asset-sell").value || null;
+    if (!ticker || !capital || !buy_date) continue;
+    assets.push({ ticker, capital, buy_date, sell_date });
+  }
+
   const end = document.getElementById("end").value;
 
-  if (tickers.length < 2) {
-    showError("Ingresá al menos 2 símbolos separados por coma.");
+  if (assets.length < 1) {
+    showError("Agregá al menos 1 activo con ticker, capital y fecha de compra.");
     return;
   }
 
@@ -284,7 +368,7 @@ form.addEventListener("submit", async (e) => {
     const res = await fetch(API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tickers, capital, start, end }),
+      body: JSON.stringify({ assets, end }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Error al calcular el backtest.");
@@ -339,7 +423,7 @@ function renderResults(data) {
         fill: true,
         pointRadius: 0,
         borderWidth: 2.5,
-                tension: 0.15,
+        tension: 0.15,
       }, ...(data.benchmark_value ? [{
         label: "SPY (S&P 500)",
         data: data.benchmark_value,
