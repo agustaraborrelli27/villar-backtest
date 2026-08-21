@@ -120,6 +120,25 @@
 
   .tickers-hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
 
+  .holding-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 11px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: normal;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .holding-check input[type="checkbox"] {
+    width: auto;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  input:disabled { opacity: 0.4; cursor: not-allowed; }
+
   button {
     margin-top: 22px;
     background: linear-gradient(90deg, var(--accent2), var(--accent));
@@ -239,15 +258,8 @@
       <div id="assets-container"></div>
       <button type="button" id="add-asset-btn" class="secondary-btn">+ Agregar activo</button>
 
-      <p class="tickers-hint">Cada activo tiene su propio capital y fecha de compra. La fecha de venta es opcional: si no la ponés, se calcula el valor hasta la fecha "Hasta" de abajo.</p>
+      <p class="tickers-hint">Cada activo tiene su propio capital y fecha de compra. Si todavía lo tenés, dejá tildado "En tenencia" y se valúa hasta hoy.</p>
       <p class="tickers-hint" style="margin-top:6px;">💡 Si compraste en <strong>pesos</strong> (CEDEAR o acción argentina), agregá <strong>.BA</strong> al final (ej: AAPL.BA, GGAL.BA). Si compraste en <strong>dólares</strong> (acción en EEUU), usá el ticker solo (ej: AAPL).</p>
-
-      <div class="grid" style="margin-top:22px; max-width:220px;">
-        <div>
-          <label for="end">Hasta (valuación)</label>
-          <input type="date" id="end" required />
-        </div>
-      </div>
 
       <button type="submit" id="submit-btn">Analizar portafolio</button>
       <p class="error" id="error-msg"></p>
@@ -284,9 +296,9 @@ let chartInstance = null;
 let assetCount = 0;
 
 const today = new Date();
+const todayStr = today.toISOString().slice(0, 10);
 const lastYear = new Date();
 lastYear.setFullYear(today.getFullYear() - 1);
-document.getElementById("end").value = today.toISOString().slice(0, 10);
 
 function addAssetRow() {
   if (assetCount >= MAX_ASSETS) return;
@@ -308,11 +320,21 @@ function addAssetRow() {
       <input type="date" class="asset-buy" value="${lastYear.toISOString().slice(0, 10)}" required />
     </div>
     <div>
-      <label>Fecha de venta (opcional)</label>
-      <input type="date" class="asset-sell" />
+      <label>Fecha de venta</label>
+      <input type="date" class="asset-sell" value="${todayStr}" disabled />
+      <label class="holding-check">
+        <input type="checkbox" class="asset-holding" checked>
+        En tenencia (todavía la tengo)
+      </label>
     </div>
     <button type="button" class="remove-asset-btn" title="Quitar activo">✕</button>
   `;
+
+  const holdingCheck = row.querySelector(".asset-holding");
+  const sellInput = row.querySelector(".asset-sell");
+  holdingCheck.addEventListener("change", () => {
+    sellInput.disabled = holdingCheck.checked;
+  });
 
   row.querySelector(".remove-asset-btn").addEventListener("click", () => {
     row.remove();
@@ -326,6 +348,7 @@ function addAssetRow() {
 
 addAssetBtn.addEventListener("click", addAssetRow);
 
+// Arranca con 2 activos por defecto
 addAssetRow();
 addAssetRow();
 
@@ -349,12 +372,13 @@ form.addEventListener("submit", async (e) => {
     const ticker = row.querySelector(".asset-ticker").value.trim();
     const capital = parseFloat(row.querySelector(".asset-capital").value);
     const buy_date = row.querySelector(".asset-buy").value;
-    const sell_date = row.querySelector(".asset-sell").value || null;
+    const isHolding = row.querySelector(".asset-holding").checked;
+    const sell_date = isHolding ? null : (row.querySelector(".asset-sell").value || null);
     if (!ticker || !capital || !buy_date) continue;
     assets.push({ ticker, capital, buy_date, sell_date });
   }
 
-  const end = document.getElementById("end").value;
+  const end = todayStr;
 
   if (assets.length < 1) {
     showError("Agregá al menos 1 activo con ticker, capital y fecha de compra.");
