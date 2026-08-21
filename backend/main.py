@@ -1,8 +1,8 @@
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from backtest import run_backtest
 
@@ -16,12 +16,16 @@ app.add_middleware(
 )
 
 
-class BacktestRequest(BaseModel):
-    tickers: list
+class AssetInput(BaseModel):
+    ticker: str
     capital: float
-    start: str
+    buy_date: str
+    sell_date: Optional[str] = None
+
+
+class BacktestRequest(BaseModel):
+    assets: List[AssetInput]
     end: str
-    weights: Optional[dict] = None
 
 
 @app.get("/api/health")
@@ -32,13 +36,8 @@ def health():
 @app.post("/api/backtest")
 def backtest(req: BacktestRequest):
     try:
-        result = run_backtest(
-            tickers=req.tickers,
-            capital=req.capital,
-            start=req.start,
-            end=req.end,
-            weights=req.weights,
-        )
+        assets = [a.dict() for a in req.assets]
+        result = run_backtest(assets=assets, end=req.end)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -49,5 +48,5 @@ def backtest(req: BacktestRequest):
         "portfolio_value": result.portfolio_value,
         "per_asset_value": result.per_asset_value,
         "metrics": result.metrics,
-                "benchmark_value": result.benchmark_value,
+        "benchmark_value": result.benchmark_value,
     }
