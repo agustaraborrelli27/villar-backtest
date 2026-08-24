@@ -233,6 +233,63 @@
 
   #results { display: none; }
 
+    /* --- TIR --- */
+  .tir-toggle-btn {
+    display: inline-block;
+    margin-bottom: 28px;
+    background: rgba(255,255,255,0.06);
+    color: var(--text);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 12px 20px;
+    font-weight: 600;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: filter 0.15s ease, background 0.15s ease;
+  }
+  .tir-toggle-btn:hover { background: rgba(255,255,255,0.1); }
+
+  #tir-panel { display: none; }
+
+  .tir-instructions { color: var(--muted); font-size: 14px; line-height: 1.6; margin: 0 0 18px; }
+  .tir-instructions strong { color: var(--text); }
+
+  .dropzone {
+    border: 1px dashed var(--panel-border);
+    border-radius: 12px;
+    padding: 32px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    margin-top: 6px;
+  }
+  .dropzone.dragover {
+    border-color: var(--accent);
+    background: rgba(180,140,255,0.08);
+  }
+  .dropzone p { margin: 0; color: var(--muted); font-size: 14px; }
+  .dropzone input[type="file"] { display: none; }
+  .file-name { margin-top: 12px; font-size: 13px; color: var(--text); font-weight: 600; }
+
+  .tir-result { display: none; margin-top: 28px; text-align: center; padding: 24px; }
+  .tir-result-label {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .tir-result-value {
+    font-family: 'Sora', sans-serif;
+    font-size: 48px;
+    font-weight: 800;
+    background: linear-gradient(90deg, var(--accent2), var(--accent));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
   @media (max-width: 720px) {
     .asset-row { grid-template-columns: 1fr 1fr; }
     .remove-asset-btn { grid-column: span 2; }
@@ -250,7 +307,30 @@
     <p class="eyebrow">Backtest · Buy &amp; Hold</p>
     <h1>¿Cómo habría rendido<br><span class="grad">tu portafolio?</span></h1>
     <p class="sub">Simulación histórica: cada activo con su propia fecha de compra, capital y venta opcional. Sin rebalanceo, sin comisiones.</p>
-  </header>
+  </header> 
+  <button type="button" id="tir-toggle-btn" class="tir-toggle-btn">📊 Calcular TIR</button>
+
+  <div class="panel" id="tir-panel">
+    <p class="assets-title">Obtener TIR de tu cartera</p>
+    <p class="tir-instructions">
+      Descargá la plantilla, completá tus <strong>Ingresos</strong>, <strong>Retiros</strong> y el <strong>Valor Inicial / Valor Actual</strong> de tu cartera, y subila acá. No hace falta ordenar los datos por fecha, la página lo hace sola. Si cargás montos en pesos, se convierten automáticamente a dólares con el tipo de cambio CCL de cada fecha.
+    </p>
+    <a href="plantilla-tir.xlsx" download class="secondary-btn" style="display:inline-block;text-decoration:none;padding:12px 20px;border-radius:10px;">⬇️ Descargar plantilla Excel</a>
+
+    <div class="dropzone" id="tir-dropzone">
+      <p>Arrastrá tu Excel acá, o hacé click para elegirlo</p>
+      <input type="file" id="tir-file-input" accept=".xlsx" />
+      <div class="file-name" id="tir-file-name"></div>
+    </div>
+
+    <button type="button" id="tir-submit-btn">Calcular TIR</button>
+    <p class="error" id="tir-error-msg"></p>
+
+    <div class="tir-result" id="tir-result">
+      <div class="tir-result-label">TIR anualizada</div>
+      <div class="tir-result-value" id="tir-result-value"></div>
+    </div>
+  </div>
 
   <div class="panel">
     <form id="backtest-form">
@@ -469,6 +549,87 @@ function renderResults(data) {
     },
   });
 }
+
+// --- TIR ---
+const TIR_API_URL = "https://villar-backtest.onrender.com/api/tir";
+
+const tirToggleBtn = document.getElementById("tir-toggle-btn");
+const tirPanel = document.getElementById("tir-panel");
+const tirDropzone = document.getElementById("tir-dropzone");
+const tirFileInput = document.getElementById("tir-file-input");
+const tirFileName = document.getElementById("tir-file-name");
+const tirSubmitBtn = document.getElementById("tir-submit-btn");
+const tirErrorMsg = document.getElementById("tir-error-msg");
+const tirResult = document.getElementById("tir-result");
+const tirResultValue = document.getElementById("tir-result-value");
+let tirSelectedFile = null;
+
+tirToggleBtn.addEventListener("click", () => {
+  const isOpen = tirPanel.style.display === "block";
+  tirPanel.style.display = isOpen ? "none" : "block";
+});
+
+tirDropzone.addEventListener("click", () => tirFileInput.click());
+
+tirDropzone.addEventListener("dragover", (e) => {
+  e.preventDefault();
+  tirDropzone.classList.add("dragover");
+});
+tirDropzone.addEventListener("dragleave", () => {
+  tirDropzone.classList.remove("dragover");
+});
+tirDropzone.addEventListener("drop", (e) => {
+  e.preventDefault();
+  tirDropzone.classList.remove("dragover");
+  if (e.dataTransfer.files.length > 0) {
+    setTirFile(e.dataTransfer.files[0]);
+  }
+});
+tirFileInput.addEventListener("change", () => {
+  if (tirFileInput.files.length > 0) {
+    setTirFile(tirFileInput.files[0]);
+  }
+});
+
+function setTirFile(file) {
+  tirSelectedFile = file;
+  tirFileName.textContent = "📄 " + file.name;
+}
+
+tirSubmitBtn.addEventListener("click", async () => {
+  tirErrorMsg.style.display = "none";
+  tirResult.style.display = "none";
+
+  if (!tirSelectedFile) {
+    tirErrorMsg.textContent = "Subí un archivo Excel primero.";
+    tirErrorMsg.style.display = "block";
+    return;
+  }
+
+  tirSubmitBtn.disabled = true;
+  tirSubmitBtn.textContent = "Calculando...";
+
+  try {
+    const formData = new FormData();
+    formData.append("archivo", tirSelectedFile);
+
+    const res = await fetch(TIR_API_URL, {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "Error al calcular la TIR.");
+
+    tirResultValue.textContent = data.tir_porcentaje + "%";
+    tirResult.style.display = "block";
+  } catch (err) {
+    tirErrorMsg.textContent = err.message;
+    tirErrorMsg.style.display = "block";
+  } finally {
+    tirSubmitBtn.disabled = false;
+    tirSubmitBtn.textContent = "Calcular TIR";
+  }
+}); 
 </script>
 </body>
 </html>
