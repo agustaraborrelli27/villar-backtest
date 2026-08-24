@@ -93,8 +93,7 @@ def leer_flujos(archivo_bytes: bytes) -> list[dict]:
         else:
             raise ValueError(f"Tipo inválido en pestaña Cartera: {tipo}")
 
-        if not tiene_actual:
-            raise ValueError("Falta la fila 'Valor Actual' en la pestaña Cartera.")
+    if not tiene_actual:
+        raise ValueError("Falta la fila 'Valor Actual' en la pestaña Cartera.")
 
     flujos.sort(key=lambda f: f["fecha"])
-    return flujos
