@@ -40,13 +40,56 @@ def calcular_xirr(flujos: list[dict], tasa_inicial: float = 0.1, max_iter: int =
 
     tasa = tasa_inicial
     for _ in range(max_iter):
-        valor = _xnpv(tasa, flujos)
-        derivada = _xnpv_derivada(tasa, flujos)
+        # (1 + tasa) no puede ser <= 0, o la potencia fraccionaria explota
+        if tasa <= -0.999999:
+            tasa = -0.999999
+
+        try:
+            valor = _xnpv(tasa, flujos)
+            derivada = _xnpv_derivada(tasa, flujos)
+        except (OverflowError, ZeroDivisionError):
+            break
+
         if derivada == 0:
             break
+
         nueva_tasa = tasa - valor / derivada
+
+        # Frenar saltos gigantes que hacen diverger el método
+        if nueva_tasa - tasa > 1:
+            nueva_tasa = tasa + 1
+        elif nueva_tasa - tasa < -1:
+            nueva_tasa = tasa - 1
+
         if abs(nueva_tasa - tasa) < tolerancia:
             return nueva_tasa
         tasa = nueva_tasa
 
-    raise ValueError("La TIR no convergió. Revisá los datos cargados (fechas y montos).")
+    # Si Newton-Raphson no convergió, probamos por búsqueda binaria en un rango amplio
+    try:
+        return _xirr_bisector(flujos)
+    except ValueError:
+        raise ValueError("La TIR no convergió. Revisá los datos cargados (fechas y montos).")
+
+
+def _xirr_bisector(flujos: list[dict], baja: float = -0.999, alta: float = 10.0, max_iter: int = 200, tolerancia: float = 1e-6) -> float:
+    """Respaldo: búsqueda binaria, más lenta pero muy estable."""
+    valor_baja = _xnpv(baja, flujos)
+    valor_alta = _xnpv(alta, flujos)
+
+    if valor_baja * valor_alta > 0:
+        raise ValueError("No se encontró una TIR en el rango esperado.")
+
+    for _ in range(max_iter):
+        medio = (baja + alta) / 2
+        valor_medio = _xnpv(medio, flujos)
+        if abs(valor_medio) < tolerancia:
+            return medio
+        if valor_baja * valor_medio < 0:
+            alta = medio
+            valor_alta = valor_medio
+        else:
+            baja = medio
+            valor_baja = valor_medio
+
+    return (baja + alta) / 2
