@@ -1,10 +1,12 @@
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from backtest import run_backtest
+from excel_flujos import leer_flujos
+from xirr import calcular_xirr
 
 app = FastAPI(title="Villar Backtest API")
 
@@ -49,4 +51,28 @@ def backtest(req: BacktestRequest):
         "per_asset_value": result.per_asset_value,
         "metrics": result.metrics,
         "benchmark_value": result.benchmark_value,
+    }
+    
+@app.post("/api/tir")
+async def tir(archivo: UploadFile = File(...)):
+    try:
+        contenido = await archivo.read()
+        flujos = leer_flujos(contenido)
+        resultado = calcular_xirr(flujos)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error inesperado: {e}")
+
+    return {
+        "tir": resultado,
+        "tir_porcentaje": round(resultado * 100, 2),
+        "flujos": [
+            {
+                "fecha": f["fecha"].isoformat(),
+                "monto_usd": round(f["monto_usd"], 2),
+                "tipo": f["tipo"],
+            }
+            for f in flujos
+        ],
     }
