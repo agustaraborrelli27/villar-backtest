@@ -13,13 +13,27 @@ def _parsear_fecha(valor) -> datetime.date:
     return pd.to_datetime(valor, dayfirst=True).date()
 
 
-def _monto_en_usd(fecha: datetime.date, moneda: str, monto: float) -> float:
-    moneda = str(moneda).strip().upper()
-    if moneda == "USD":
+def _parsear_monto(monto) -> float:
+    """Acepta números o texto con formato de moneda ('$1,500,000.00') y devuelve un float."""
+    if isinstance(monto, (int, float)):
         return float(monto)
+    texto = str(monto).strip()
+    texto = texto.replace("$", "").replace(" ", "")
+    texto = texto.replace(",", "")
+    try:
+        return float(texto)
+    except ValueError:
+        raise ValueError(f"No se pudo interpretar el monto: {monto!r}")
+
+
+def _monto_en_usd(fecha: datetime.date, moneda: str, monto) -> float:
+    moneda = str(moneda).strip().upper()
+    monto_num = _parsear_monto(monto)
+    if moneda == "USD":
+        return monto_num
     if moneda == "ARS":
         ccl = obtener_ccl(fecha)
-        return float(monto) / ccl
+        return monto_num / ccl
     raise ValueError(f"Moneda no reconocida: {moneda}. Debe ser ARS o USD.")
 
 
