@@ -62,8 +62,9 @@ async def tir(archivo: UploadFile = File(...)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error inesperado: {e}")
-
+        import traceback
+        detalle_tecnico = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"Error inesperado: {e} | {detalle_tecnico[-500:]}")
     return {
         "tir": resultado,
         "tir_porcentaje": round(resultado * 100, 2),
