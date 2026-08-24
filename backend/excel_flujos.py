@@ -97,3 +97,4 @@ def leer_flujos(archivo_bytes: bytes) -> list[dict]:
         raise ValueError("Falta la fila 'Valor Actual' en la pestaña Cartera.")
 
     flujos.sort(key=lambda f: f["fecha"])
+    return flujos
