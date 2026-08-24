@@ -16,11 +16,21 @@ def _pedir_cotizacion(fecha: datetime.date) -> float | None:
     if resp.status_code != 200:
         return None
 
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError:
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
     venta = data.get("venta")
     if venta is None:
         return None
-    return float(venta)
+    try:
+        return float(venta)
+    except (TypeError, ValueError):
+        return None
 
 
 def obtener_ccl(fecha: datetime.date, max_dias_atras: int = 10) -> float:
